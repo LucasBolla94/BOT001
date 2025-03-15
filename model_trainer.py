@@ -24,10 +24,14 @@ def initialize_model(model_path=None):
     """Inicializa o modelo ou carrega um existente."""
     if model_path and os.path.exists(model_path):
         model = load(model_path)
-        print(f"Modelo carregado de {model_path}")
+        if not isinstance(model, SGDClassifier):
+            print(f"Modelo carregado de {model_path} não é um SGDClassifier. Inicializando um novo modelo.")
+            model = SGDClassifier(loss='log_loss', max_iter=1, warm_start=True)
+        else:
+            print(f"Modelo SGDClassifier carregado de {model_path}")
     else:
-        model = SGDClassifier(loss='log', max_iter=1, warm_start=True)
-        print("Novo modelo inicializado")
+        model = SGDClassifier(loss='log_loss', max_iter=1, warm_start=True)
+        print("Novo modelo SGDClassifier inicializado")
     return model
 
 def train_incremental(model, X, y, scaler=None):
