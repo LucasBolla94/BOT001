@@ -1,42 +1,103 @@
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
+from sklearn.linear_model import SGDClassifier
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
-from joblib import dump
-from feature_engineering import load_and_process_data
+from joblib import dump, load
+import os
 
-def train_model(df):
-    # Definindo a variável alvo
+def load_and_process_data(file_path):
+    """Carrega os dados e aplica processamento para cálculo das features."""
+    df = pd.read_csv(file_path)
+    
+    # Criar as colunas se não existirem
+    if 'volatility' not in df.columns:
+        df['volatility'] = df['close'].rolling(window=10).std()
+    if 'ma_ratio' not in df.columns:
+        df['ma_ratio'] = df['close'].rolling(window=5).mean() / df['close'].rolling(window=20).mean()
+
+    # Remover valores NaN que podem surgir no cálculo das médias
+    df.dropna(inplace=True)
+    
+    return df
+
+def initialize_model(model_path=None):
+    """Inicializa o modelo ou carrega um existente."""
+    if model_path and os.path.exists(model_path):
+        model = load(model_path)
+        print(f"Modelo carregado de {model_path}")
+    else:
+        model = SGDClassifier(loss='log', max_iter=1, warm_start=True)
+        print("Novo modelo inicializado")
+    return model
+
+def train_incremental(model, X, y, scaler=None):
+    """Treina o modelo de forma incremental, atualizando apenas os novos dados."""
+    if scaler is None:
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+    else:
+        X_scaled = scaler.transform(X)
+    
+    model.partial_fit(X_scaled, y, classes=[0, 1])
+    return model, scaler
+
+def evaluate_model(model, X, y, scaler):
+    """Avalia o modelo utilizando acurácia como métrica."""
+    X_scaled = scaler.transform(X)
+    y_pred = model.predict(X_scaled)
+    accuracy = accuracy_score(y, y_pred)
+    print(f"Acurácia do modelo: {accuracy:.2f}")
+    return accuracy
+
+def save_model(model, scaler, model_path, scaler_path):
+    """Salva o modelo treinado e o scaler."""
+    dump(model, model_path)
+    dump(scaler, scaler_path)
+    print(f"Modelo salvo em {model_path}")
+    print(f"Scaler salvo em {scaler_path}")
+
+if __name__ == "__main__":
+    data_filename = 'data/sol_usdc_data.csv'
+    model_filename = 'models/modelo_scalping.pkl'
+    scaler_filename = 'models/scaler.pkl'
+
+    # Garantir que os diretórios existem
+    os.makedirs(os.path.dirname(model_filename), exist_ok=True)
+    os.makedirs(os.path.dirname(scaler_filename), exist_ok=True)
+
+    # Carrega e processa os dados
+    df = load_and_process_data(data_filename)
+
+    # Criar a coluna alvo
     df['target'] = (df['close'].shift(-1) > df['close']).astype(int)
-    # Selecionando as features para o modelo
+
+    # Definir as features
     features = ['volatility', 'ma_ratio']
+
+    # Verificar se as colunas necessárias existem
+    if not all(f in df.columns for f in features):
+        print(f"Erro: As colunas {features} não foram encontradas no DataFrame!")
+        print(f"Colunas disponíveis: {df.columns}")
+        exit()
+
+    # Separar os dados
     X = df[features]
     y = df['target']
 
-    # Dividindo os dados em conjuntos de treino e teste
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+    # Inicializar ou carregar o modelo existente
+    model = initialize_model(model_filename)
 
-    # Inicializando e treinando o modelo de Regressão Logística
-    model = LogisticRegression()
-    model.fit(X_train, y_train)
+    # Inicializar ou carregar o scaler existente
+    scaler = None
+    if os.path.exists(scaler_filename):
+        scaler = load(scaler_filename)
+        print(f"Scaler carregado de {scaler_filename}")
 
-    # Fazendo previsões no conjunto de teste
-    y_pred = model.predict(X_test)
-    # Calculando a acurácia do modelo
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f'Acurácia do modelo: {accuracy:.2f}')
+    # Treinar o modelo de forma incremental
+    model, scaler = train_incremental(model, X, y, scaler)
 
-    return model
+    # Avaliar o modelo
+    evaluate_model(model, X, y, scaler)
 
-def save_model(model, filename):
-    # Salvando o modelo treinado no arquivo especificado
-    dump(model, filename)
-    print(f'Modelo salvo em {filename}')
-
-if __name__ == "__main__":
-    # Carregando e processando os dados
-    df = load_and_process_data('data/sol_usdc_data.csv')
-    # Treinando o modelo
-    model = train_model(df)
-    # Salvando o modelo treinado
-    save_model(model, 'models/modelo_scalping.pkl')
+    # Salvar o modelo e o scaler atualizados
+    save_model(model, scaler, model_filename, scaler_filename)
