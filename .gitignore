@@ -1,2 +1,2 @@
-models/*.pkl
-venv
+models/random_forest_model.pkl
+venv/
