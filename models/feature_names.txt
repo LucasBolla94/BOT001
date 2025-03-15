@@ -1,0 +1,6 @@
+volatility
+ma_ratio
+rsi
+macd
+bollinger_upper
+bollinger_lower
